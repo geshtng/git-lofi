@@ -93,3 +93,7 @@ GITHUB_TOKEN=... npm start -- <login> --time dusk --out lofi --save snapshot.jso
 npm start -- --from snapshot.json --time sakura   # redraw offline
 npm test
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
