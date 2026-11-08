@@ -10,12 +10,16 @@ Inspired by [git-koi](https://github.com/yalongwastaken/git-koi) by Anthony Yalo
   <img src="docs/night.gif" width="960" alt="An animated lofi city at night: trains cross a bridge under Mount Fuji, lights reflected in the river" />
 </p>
 
-| | |
-| --- | --- |
-| <img src="docs/dawn-spring.gif" alt="Spring dawn, sakura petals, a train stopping at the station" /> | <img src="docs/day-summer.gif" alt="Summer day, green trees, a full train" /> |
-| Spring dawn: sakura, a station stop | Summer day: green trees, fireflies, a full train |
-| <img src="docs/dusk-autumn.gif" alt="Autumn dusk, maples, a shinkansen passing a grown city" /> | <img src="docs/night-winter.gif" alt="Winter night, snow, dim windows after a quiet spell" /> |
-| Autumn dusk: maples, a shinkansen after a milestone | Winter night: snowed in after 60 quiet days |
+<table>
+  <tr>
+    <td><img src="docs/dawn-spring.gif" alt="Spring dawn, sakura petals, a train stopping at the station" /><br />Spring dawn: sakura, a station stop</td>
+    <td><img src="docs/day-summer.gif" alt="Summer day, green trees, a busy street, a full train" /><br />Summer day: green trees, a busy street, a full train</td>
+  </tr>
+  <tr>
+    <td><img src="docs/dusk-autumn.gif" alt="Autumn dusk, maples, a shinkansen passing a grown city" /><br />Autumn dusk: maples, a shinkansen after a milestone</td>
+    <td><img src="docs/night-winter.gif" alt="Winter night, snow, dim windows after a quiet spell" /><br />Winter night: snowed in after 60 quiet days</td>
+  </tr>
+</table>
 
 Samples are made-up cities; regenerate them with `npm run samples`.
 

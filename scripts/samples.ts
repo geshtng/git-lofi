@@ -18,10 +18,15 @@ const city = (over: Partial<City>): City => ({
 })
 
 writeFileSync('docs/night.gif', encodeGif(renderCity(city({}), 'night'), W, H))
-const stills: [string, City, string][] = [
+// The grid samples animate too, at half size and every other frame (still a seamless loop),
+// so four of them stay light.
+const grid: [string, City, string][] = [
   ['dawn-spring', city({ month: 4, behavior: 'station-stop', growth: 0.3 }), 'dawn'],
   ['day-summer', city({ month: 7, seed: 7, today: 12 }), 'day'],
   ['dusk-autumn', city({ month: 10, seed: 42, behavior: 'shinkansen', growth: 0.8 }), 'dusk'],
   ['night-winter', city({ month: 1, seed: 99, behavior: 'snowed-in', lit: 0.3 }), 'night'],
 ]
-for (const [name, c, time] of stills) writeFileSync(`docs/${name}.gif`, encodeGif([renderCity(c, time)[0]], W, H))
+for (const [name, c, time] of grid) {
+  const frames = renderCity(c, time).filter((_, i) => i % 2 === 0)
+  writeFileSync(`docs/${name}.gif`, encodeGif(frames, W, H, 1, 120))
+}
