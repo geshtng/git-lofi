@@ -1,6 +1,6 @@
 {
   "name": "git-lofi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Draw a lofi Japanese city from a GitHub account's public activity, as a looping GIF for a profile README.",
   "type": "module",
