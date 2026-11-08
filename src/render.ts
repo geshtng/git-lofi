@@ -295,6 +295,7 @@ export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeat
     return lit
   }
   const perches: { x: number; y: number; h: number }[] = []
+  const tvs: { x: number; y: number; phase: number; mask: [number, number][] }[] = []
   for (let x = -int(15); x < W; ) {
     const tower = r() < 0.15 + city.growth * 0.85
     const w = tower ? 24 + int(30) : 22 + int(17)
@@ -326,6 +327,8 @@ export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeat
           base.rect(wx + 4, top + 7, 1, 6, mix(glow, near, 0.4))
           base.rect(wx, top + 10, 8, 1, mix(glow, near, 0.4))
         }
+        // Every 4th home window holds a TV or a game, flickering after dark, lit room or not.
+        if (perches.length % 4 === 1) tvs.push({ x: wx, y: top + 7, phase: perches.length * 0.37, mask: [] })
       }
     }
     x += w + int(3 + (1 - city.growth) * 30)
@@ -631,6 +634,12 @@ export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeat
     }
   }
 
+  // TV light falls only on window glass still visible once shops, trees, lamps, poles and wires
+  // stand in front, so whatever is in front of a window stays in front of its glow.
+  for (const tv of tvs)
+    for (let dy = 0; dy < 6; dy++)
+      for (let dx = 0; dx < 8; dx++) if (base.is(tv.x + dx, tv.y + dy, glow) || base.is(tv.x + dx, tv.y + dy, windowOff)) tv.mask.push([dx, dy])
+
   if (wet && look !== 'rain') {
     const veil = hex('#1a2030')
     for (let i = 0; i < base.buf.length; i += 4) {
@@ -658,6 +667,12 @@ export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeat
       if (!off) c.glowAt(s.x + 2, s.y + (s.h >> 1), 8, s.c, 0.15)
     }
     for (const b of beacons) if ((t * 8) % 1 < 0.5) c.glowAt(b.x, b.y, 3, hex('#ff3b3b'), 1)
+    if (dark)
+      for (const tv of tvs) {
+        const picture = hex(['#7fb8ff', '#a0ffd8', '#c9a8ff'][(Math.floor(t * 3 + tv.phase * 3) % 3 + 3) % 3]) // changes 3 times a loop
+        const level = 0.55 + 0.45 * Math.sin(2 * Math.PI * (t * 6 + tv.phase)) * Math.sin(2 * Math.PI * (t * 2 + tv.phase))
+        for (const [dx, dy] of tv.mask) c.set(tv.x + dx, tv.y + dy, mix(near, picture, level))
+      }
     if (cat) {
       const { x, y } = cat
       c.set(x, y - 8, catInk)
@@ -722,11 +737,16 @@ export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeat
         if (x < W + 10) drawWalker(c, crowd, x, STREET + 1, (Math.floor(t * 24) + crowd.step + i) % 2)
       }
 
-    // Traffic in two lanes: oncoming further back, the near lane in front.
-    for (const v of traffic) {
-      const x = ((((v.x + v.dir * v.laps * span * t) % span) + span) % span) - 40
-      drawVehicle(c, v.kind, v.color, v.dir, x, v.dir > 0 ? STREET + 8 : STREET + 4)
+    // Traffic in two lanes, back to front: the oncoming lane, the delivery scooter (which uses
+    // that lane), then the near lane, so nearer vehicles always pass in front.
+    const driveLane = (lane: number) => {
+      for (const v of traffic) {
+        if (v.dir !== lane) continue
+        const x = ((((v.x + v.dir * v.laps * span * t) % span) + span) % span) - 40
+        drawVehicle(c, v.kind, v.color, v.dir, x, v.dir > 0 ? STREET + 8 : STREET + 4)
+      }
     }
+    driveLane(-1)
     // A delivery scooter rides in, stops at each konbini, and rides off within every loop.
     if (shopA !== undefined) {
       const stopsAt: [number, number][] = [[0, -30], [0.22, shopA], [0.38, shopA], [0.6, shopB ?? shopA], [0.76, shopB ?? shopA], [1, W + 30]]
@@ -735,6 +755,7 @@ export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeat
       const [t1, x1] = stopsAt[i]
       drawVehicle(c, 'delivery', '#e2231a', 1, x0 + (x1 - x0) * ((t - t0) / (t1 - t0)) - 5, STREET + 4)
     }
+    driveLane(1)
     for (const [x, y, w, h, col] of fronts) c.rect(x, y, w, h, col)
 
     drawTrain(c, t, true)
