@@ -31,17 +31,24 @@ Samples are made-up cities; regenerate them with `npm run samples`.
 | Month of the day just ended | Season: sakura and petals, green trees and fireflies, red maples and falling leaves, or bare trees and snow |
 | Contributions on that day | Passengers: from an empty train to every seat taken at 8+ |
 
-A cat sits on the tallest roof, blinking and swishing its tail.
+A cat sits on the tallest roof, blinking and swishing its tail. The street is busy: cars, taxis,
+buses and scooters in two lanes, people walking (under umbrellas when it rains), a delivery
+scooter stopping at each konbini, steam over the ramen stands, trees swaying in the wind, and
+birds by day or a blinking plane by night.
 
-The day that just ended picks the train:
+## Your location: weather, time, and seasons
 
-| When | Train |
-| --- | --- |
-| 60+ quiet days | Snowed in, no train |
-| 14+ quiet days | Rain, the last train passes slowly |
-| First contribution of the week | Stops at the station, doors open |
-| Crossed 1k/5k/10k/25k/50k/100k in the last 7 days, or a Sunday ending a top-10% week | Shinkansen, two fast passes |
-| Anything else | One local train |
+Set `location` to your city (`Jakarta`, or `Bandung, Indonesia` when a name is ambiguous) or to
+`latitude,longitude`. One lookup with [Open-Meteo](https://open-meteo.com) (free, no key) gives:
+
+- **Live weather** at each redraw: rain, a thunderstorm with lightning, or snow. Clear skies
+  keep the season's look, and the day's train still wins (a snowed-in day stays snowed in).
+- **Your timezone** for the time of day and the street lights, which come on from 17:30 to 06:00
+  and whenever it rains. Lit office and home windows still follow your streak.
+- **Your hemisphere**, so south of the equator the sakura blooms in October.
+
+`timezone` and `weather` (`latitude,longitude`, or `off`) still work and override what the
+location gives. If a lookup fails, the city is drawn as usual with clear skies.
 
 ## Profile README
 
@@ -62,7 +69,7 @@ jobs:
       - uses: geshtng/git-lofi@main
         with:
           time: auto # follows the hour in timezone; or day, night, dusk, dawn, rain, snow, sakura
-          timezone: Asia/Jakarta
+          location: Jakarta # your city; sets the weather, timezone, and seasons
           output-dir: lofi
       # Force-push only the latest GIF to its own branch, so history never piles up.
       - env:
@@ -91,6 +98,9 @@ Node 20+:
 npm install
 GITHUB_TOKEN=... npm start -- <login> --time dusk --out lofi --save snapshot.json
 npm start -- --from snapshot.json --time sakura   # redraw offline
+npm start -- --from snapshot.json --location "Bandung, Indonesia"            # live weather and local time
+npm start -- --from snapshot.json --location=-6.21,106.85                    # coordinates (= because of the minus)
+npm start -- --from snapshot.json --time night --weather storm                # try a storm
 npm test
 ```
 

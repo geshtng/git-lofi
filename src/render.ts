@@ -3,6 +3,7 @@
 // Deterministic per seed, and every motion completes whole cycles so the GIF loops cleanly.
 
 import type { Behavior, City } from './city.ts'
+import type { LiveWeather } from './weather.ts'
 
 export const W = 480
 export const H = 270
@@ -49,8 +50,11 @@ export const FRAMES = 240
 export const timeOfDay = (hour: number) => (hour >= 4 && hour < 6 ? 'dawn' : hour >= 6 && hour < 16 ? 'day' : hour >= 16 && hour < 19 ? 'dusk' : 'night')
 const PASSES: Record<Behavior, number> = { 'snowed-in': 2, 'last-train': 2, 'station-stop': 2, shinkansen: 6, local: 3 }
 
-// ponytail: northern-hemisphere seasons; add a hemisphere flag if someone south asks
-const seasonOf = (month: number): Season => (month >= 3 && month <= 5 ? 'spring' : month <= 8 && month >= 6 ? 'summer' : month >= 9 && month <= 11 ? 'autumn' : 'winter')
+/** Meteorological seasons; south of the equator they run six months apart. */
+export const seasonOf = (month: number, southern = false): Season => {
+  const m = southern ? ((month + 5) % 12) + 1 : month
+  return m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer' : m >= 9 && m <= 11 ? 'autumn' : 'winter'
+}
 const SEASON_WEATHER: Record<Season, Weather> = { spring: 'petals', summer: 'fireflies', autumn: 'leaves', winter: 'snow' }
 const TREE: Record<Season, string[]> = { spring: ['#f7b6c8', '#ffd3e0'], summer: ['#3f7d4a', '#5a9a52'], autumn: ['#d9622b', '#e8a33d'], winter: [] }
 const LEAVES = ['#e0712c', '#c9452b', '#f0a640']
@@ -63,6 +67,85 @@ const KONBINI: string[][] = [
   ['#1e5aa8', '#ffffff', '#1e5aa8'],
   ['#f58220', '#00843d', '#e2231a'],
 ]
+
+const COATS = ['#3a4a6b', '#7a3b3b', '#2f5d50', '#5b4a7a', '#8a6d3b', '#444b55']
+const UMBRELLAS = ['#e2231a', '#1e64c8', '#f2c230', '#0a9a4a', '#f1f3f5', '#8e5bd8', '#ff7eb6']
+const CAR_COLORS = ['#c0392b', '#2c3e50', '#ecf0f1', '#2e86de', '#7f8c8d', '#16a085', '#8e44ad']
+
+/** Street traffic, drawn facing right in a box `w` wide whose bottom row sits on the road. */
+type Sprite = [number, number, (rect: (x: number, y: number, w: number, h: number, c: string) => void, body: string, lamp: string) => void]
+const VEHICLES: Record<string, Sprite> = {
+  car: [14, 6, (rect, c, lamp) => {
+    rect(4, 0, 6, 2, c)
+    rect(5, 0, 2, 2, '#bcd3e8')
+    rect(8, 0, 2, 2, '#bcd3e8')
+    rect(1, 2, 13, 3, c)
+    rect(13, 3, 1, 1, lamp)
+  }],
+  taxi: [14, 7, (rect, c, lamp) => {
+    rect(6, 0, 2, 1, '#ffffff')
+    rect(4, 1, 6, 2, '#f2c230')
+    rect(5, 1, 2, 2, '#bcd3e8')
+    rect(8, 1, 2, 2, '#bcd3e8')
+    rect(1, 3, 13, 3, '#f2c230')
+    rect(13, 4, 1, 1, lamp)
+  }],
+  kei: [11, 7, (rect, c, lamp) => {
+    rect(1, 0, 9, 6, c)
+    rect(7, 1, 3, 2, '#bcd3e8')
+    rect(2, 1, 4, 2, '#bcd3e8')
+    rect(10, 4, 1, 1, lamp)
+  }],
+  bus: [30, 9, (rect, c, lamp) => {
+    rect(0, 0, 30, 8, '#f1f3f5')
+    rect(0, 5, 30, 2, '#0a9a4a')
+    for (let x = 2; x < 26; x += 4) rect(x, 1, 3, 3, '#bcd3e8')
+    rect(27, 1, 3, 3, '#bcd3e8')
+    rect(29, 6, 1, 1, lamp)
+  }],
+  truck: [22, 9, (rect, c, lamp) => {
+    rect(0, 0, 15, 8, '#e8e4da')
+    rect(2, 2, 10, 2, c)
+    rect(16, 2, 6, 6, c)
+    rect(18, 3, 3, 2, '#bcd3e8')
+    rect(21, 6, 1, 1, lamp)
+  }],
+  scooter: [9, 8, (rect, c, lamp) => {
+    rect(3, 0, 3, 2, c)
+    rect(3, 2, 2, 3, '#2a2f3a')
+    rect(1, 5, 7, 2, c)
+    rect(8, 4, 1, 1, lamp)
+  }],
+  delivery: [10, 8, (rect, c, lamp) => {
+    rect(0, 1, 4, 4, '#e2231a')
+    rect(0, 2, 4, 1, '#ffffff')
+    rect(4, 0, 3, 2, '#e9c9a8')
+    rect(4, 2, 2, 3, '#2a2f3a')
+    rect(1, 5, 8, 2, '#d0d0d0')
+    rect(9, 4, 1, 1, lamp)
+  }],
+}
+
+/** Screen blend: brightens what's underneath, so light reads as light over any color. */
+const screen = (a: RGB, b: RGB, alpha: number): RGB => [0, 1, 2].map((i) => Math.round(a[i] + (255 - a[i]) * (b[i] / 255) * alpha)) as RGB
+
+/**
+ * A leafy crown as a few overlapping clumps with ragged edges, split into light (upper left),
+ * mid and dark (lower right) pixels, with speckles so it reads as foliage, not a ball.
+ */
+function makeCrown(size: number, r: () => number): [number, number][][] {
+  const clumps = [[0, -0.25, 0.75], [-0.55, 0.15, 0.6], [0.6, 0.2, 0.55], [0.15, -0.8, 0.45], [-0.3, -0.65, 0.4]]
+  const shades: [number, number][][] = [[], [], []]
+  const reach = Math.ceil(size * 1.3)
+  for (let dy = -reach; dy <= reach; dy++)
+    for (let dx = -reach; dx <= reach; dx++) {
+      const inside = clumps.some(([cx, cy, cr]) => Math.hypot(dx - cx * size, dy - cy * size) <= cr * size * (1 + (r() - 0.5) * 0.3))
+      if (!inside || r() < 0.04) continue
+      const light = (-dx - dy * 1.2) / size + (r() - 0.5) * 0.9
+      shades[light > 0.6 ? 0 : light < -0.5 ? 2 : 1].push([dx, dy])
+    }
+  return shades
+}
 
 const WHITE: RGB = [255, 255, 255]
 const BLACK: RGB = [0, 0, 0]
@@ -115,9 +198,19 @@ function canvas(buf = new Uint8Array(W * H * 4)) {
 }
 type Canvas = ReturnType<typeof canvas>
 
-export function renderCity(city: City, time = 'night'): Uint8Array[] {
-  const p = PALETTES[time]
-  if (!p) throw new Error(`unknown time "${time}", use one of: ${Object.keys(PALETTES).join(', ')}`)
+/**
+ * `sky.weather` is the live weather where the account lives; `sky.dark` says whether street
+ * lights should be on (without it, lights are on for anything but day); `sky.southern` flips
+ * the seasons for the southern hemisphere.
+ */
+export function renderCity(city: City, time = 'night', sky: { weather?: LiveWeather; dark?: boolean; southern?: boolean } = {}): Uint8Array[] {
+  if (!PALETTES[time]) throw new Error(`unknown time "${time}", use one of: ${Object.keys(PALETTES).join(', ')}`)
+  const live = sky.weather ?? 'clear'
+  const wet = live === 'rain' || live === 'storm'
+  // Daytime rain turns the whole sky grey; evening rain keeps its colors under a darker veil.
+  const look = wet && time === 'day' ? 'rain' : time
+  const p = PALETTES[look]
+  const dark = sky.dark ?? time !== 'day'
   const r = rng(city.seed)
   const int = (n: number) => (r() * n) | 0
   const [skyTop, skyBottom] = p.sky.map(hex)
@@ -138,7 +231,7 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
 
   const base = canvas()
   for (let y = 0; y < H; y++) base.rect(0, y, W, 1, skyAt(y))
-  if (p.moon) {
+  if (p.moon && !wet) {
     const mx = 40 + int(400)
     const moon = hex('#f6efcf')
     base.glowAt(mx, 40, 28, moon, 0.18)
@@ -239,6 +332,8 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
   }
 
   // Shops on the street: konbini with striped signs and bright glass fronts, ramen stands with lanterns.
+  const konbini: number[] = []
+  const stalls: { x: number; y: number }[] = []
   for (let k = 0; k < 4; k++) {
     const sx = 10 + Math.round((k + r() * 0.5) * (W / 4))
     if (k % 2 === 0) {
@@ -249,7 +344,8 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
       base.rect(sx + 2, top + 8, 46, 18, mix(WHITE, glow, 0.25))
       for (let y = top + 12; y < STREET; y += 4) base.rect(sx + 2, y, 46, 1, mix(WHITE, near, 0.35))
       for (let x = sx + 2; x < sx + 50; x += 12) base.rect(x, top + 8, 1, 18, mix(WHITE, near, 0.5))
-      base.glowAt(sx + 25, STREET - 2, 30, mix(WHITE, glow, 0.4), 0.22)
+      if (dark) base.glowAt(sx + 25, STREET - 2, 30, mix(WHITE, glow, 0.4), 0.22)
+      konbini.push(sx + 25)
     } else {
       const top = STREET - 20
       base.rect(sx, top, 32, 20, mix(hex('#5a3a28'), near, 0.4))
@@ -257,37 +353,39 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
       base.rect(sx + 8, top + 3, 16, 5, mix(WHITE, glow, 0.4))
       for (let x = sx + 8; x < sx + 24; x += 4) base.rect(x, top + 9, 3, 6, hex('#26305e'))
       base.rect(sx + 8, top + 15, 16, 5, mix(glow, near, 0.3))
+      const paper = dark ? lantern : mix(lantern, near, 0.3)
+      stalls.push({ x: sx + 16, y: top - 3 })
       for (const lx of [sx + 1, sx + 28]) {
-        base.glowAt(lx + 1, top + 6, 9, lantern, 0.35)
-        base.rect(lx, top + 3, 3, 6, lantern)
-        base.rect(lx, top + 5, 3, 1, mix(lantern, BLACK, 0.3))
+        if (dark) base.glowAt(lx + 1, top + 6, 9, lantern, 0.35)
+        base.rect(lx, top + 3, 3, 6, paper)
+        base.rect(lx, top + 5, 3, 1, mix(paper, BLACK, 0.3))
       }
     }
   }
 
   // Street trees dressed for the season.
-  const season: Season = time === 'sakura' ? 'spring' : time === 'snow' ? 'winter' : seasonOf(city.month)
+  const season: Season = time === 'sakura' ? 'spring' : time === 'snow' ? 'winter' : seasonOf(city.month, sky.southern)
+  const leaves = TREE[season].length ? [mix(hex(TREE[season][1]), near, 0.2), mix(hex(TREE[season][0]), near, 0.3), mix(hex(TREE[season][0]), near, 0.55)] : []
+  const trees: { x: number; y: number; size: number; crown: [number, number][][]; phase: number }[] = []
   for (let k = 0; k < 4; k++) {
     const tx = 10 + k * (W / 4) + 88 + int(16)
     base.rect(tx, STREET - 16, 3, 16, ink)
-    const crown = TREE[season].map((c) => mix(hex(c), near, 0.35))
-    if (!crown.length) {
+    if (!leaves.length) {
       for (const [dx, len] of [[-1, 9], [1, 8], [-1, 5], [1, 6]]) for (let i = 0; i < len; i++) base.set(tx + 1 + dx * i * 0.8, STREET - 14 - i - len, ink)
       for (let i = 0; i < 6; i++) base.rect(tx - 6 + int(15), STREET - 30 + int(12), 2, 1, WHITE)
       continue
     }
-    for (const [cx, cy, rad] of [[0, -24, 9], [-6, -19, 6], [7, -19, 6]])
-      for (let dy = -rad; dy <= rad; dy++)
-        for (let dx = -rad; dx <= rad; dx++)
-          if (dx * dx + dy * dy <= rad * rad) base.set(tx + 1 + cx + dx, STREET + cy + dy, crown[r() < 0.3 && dy < 0 ? 1 : 0])
+    trees.push({ x: tx + 1, y: STREET - 20, size: 10, crown: makeCrown(10, r), phase: r() })
   }
 
   // Street: lamps, vending machines, and utility poles with sagging wires.
   base.rect(0, STREET, W, TRAIN_TOP - STREET, ground)
+  for (let x = 0; x < W; x += 12) base.rect(x, STREET + 5, 6, 1, mix(ground, glow, 0.12))
+  const fronts: [number, number, number, number, RGB][] = []
   for (let x = 30; x < W; x += 84) {
     base.rect(x, 186, 1, STREET - 186, ink)
-    base.rect(x - 2, 185, 5, 1, glow)
-    base.glowAt(x, 187, 11, glow, 0.25)
+    base.rect(x - 2, 185, 5, 1, dark ? glow : mix(ink, WHITE, 0.3))
+    if (dark) base.glowAt(x, 187, 11, glow, 0.25)
   }
   for (let k = 0; k < 3; k++) {
     const vx = 15 + int(W - 30)
@@ -312,13 +410,20 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
   const station = 165 + int(135)
   base.rect(0, TRAIN_TOP, W, RAIL - TRAIN_TOP, river)
   base.rect(station - 6, 189, 132, 3, roof)
-  for (let x = station; x < station + 120; x += 12) base.glowAt(x, 193, 4, glow, 0.5)
-  for (const x of [station, station + 60, station + 119]) base.rect(x, 192, 2, RAIL - 192, ink)
+  for (let x = station; x < station + 120; x += 12) {
+    if (dark) base.glowAt(x, 193, 4, glow, 0.5)
+    else base.rect(x - 1, 192, 2, 1, mix(roof, WHITE, 0.3))
+  }
+  for (const x of [station, station + 60, station + 119]) {
+    base.rect(x, 192, 2, RAIL - 192, ink)
+    fronts.push([x, STREET, 2, TRAIN_TOP - STREET, ink])
+  }
   base.rect(station + 48, 177, 24, 9, hex('#f2f2f2'))
   base.rect(station + 51, 180, 18, 3, livery)
   base.rect(station + 50, 186, 1, 3, ink)
   base.rect(station + 69, 186, 1, 3, ink)
   for (let x = 45; x < W; x += 72) {
+    fronts.push([x, STREET, 3, TRAIN_TOP - STREET, deck])
     base.rect(x, WIRE + FAR_TRACK - 2, 3, RAIL - WIRE - FAR_TRACK + 2, deck)
     base.rect(x - 5, WIRE + FAR_TRACK - 2, 13, 1, deck)
     base.rect(x - 5, WIRE - 2, 13, 1, deck)
@@ -336,14 +441,19 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
   base.rect(station - 6, DECK, 132, 3, mix(deck, glow, 0.3))
   base.rect(0, RIVER, W, H - RIVER, river)
 
-  const stars = p.stars
+  const stars = p.stars && !wet
     ? Array.from({ length: 30 + Math.round(city.record * 150) }, () => ({ x: int(W), y: int(HORIZON), speed: 1 + int(2), phase: r(), big: r() < 0.08 })).filter((s) =>
         base.is(s.x, s.y, skyAt(s.y)),
       )
     : []
   const shimmer = Array.from({ length: 110 }, () => ({ x: int(W), y: RIVER + 3 + int(H - RIVER - 3), w: 3 + int(6), phase: r() }))
-  const weather: Weather = city.behavior === 'snowed-in' ? 'snow' : city.behavior === 'last-train' ? 'rain' : (p.weather ?? SEASON_WEATHER[season])
-  const particles = Array.from({ length: weather === 'fireflies' ? 40 : weather === 'petals' || weather === 'leaves' ? 75 : 240 }, () => ({
+  const weather: Weather =
+    city.behavior === 'snowed-in' ? 'snow'
+    : city.behavior === 'last-train' || wet ? 'rain'
+    : live === 'snow' ? 'snow'
+    : (p.weather ?? SEASON_WEATHER[season])
+  // ponytail: 140 short solid raindrops keep a rainy GIF near 3 MB; more drops look denser but every one changes pixels in every frame
+  const particles = Array.from({ length: weather === 'fireflies' ? 40 : weather === 'petals' || weather === 'leaves' ? 75 : weather === 'rain' ? 140 : 240 }, () => ({
     x: r() * W,
     y: weather === 'fireflies' ? 175 + r() * 60 : r() * H,
     phase: r(),
@@ -355,6 +465,62 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
   const catPhase = r()
   const full = Math.min(city.today / FULL_TRAIN, 1)
   const seat = (n: number) => (Math.imul(n ^ city.seed, 2654435761) >>> 0) / 4294967296
+
+  const raining = weather === 'rain'
+  const span = W + 80
+  const kinds = ['car', 'car', 'car', 'taxi', 'kei', 'bus', 'truck', 'scooter']
+  // Each vehicle crosses a whole number of times per loop, so the GIF restarts seamlessly.
+  // ponytail: 6 vehicles keep rainy GIFs near 3 MB; every moving thing costs pixels in every frame
+  const traffic = Array.from({ length: 6 }, () => {
+    const kind = kinds[int(kinds.length)]
+    return { kind, x: r() * span, dir: r() < 0.5 ? 1 : -1, laps: kind === 'bus' || kind === 'truck' ? 1 : 1 + int(2), color: CAR_COLORS[int(CAR_COLORS.length)] }
+  })
+  // Walkers come in steady streams that move exactly one gap per loop: at the restart everyone
+  // stands where the person ahead stood, so nobody jumps.
+  const crowds = Array.from({ length: 4 }, (_, g) => {
+    const gap = 110 + int(60)
+    return { dir: g % 2 ? -1 : 1, gap, count: Math.ceil((W + 20) / gap) + 1, offset: r() * gap, coat: hex(COATS[int(COATS.length)]), umbrella: hex(UMBRELLAS[int(UMBRELLAS.length)]), step: int(2) }
+  })
+  const puddles = Array.from({ length: 6 }, () => ({ x: int(W), w: 10 + int(12), phase: r() }))
+  const flocks = Array.from({ length: 2 }, () => ({
+    x: r() * (W + 60),
+    y: 30 + int(70),
+    birds: Array.from({ length: 3 + int(3) }, (_, k) => ({ dx: -k * 7 + int(3), dy: Math.abs(k - 2) * 3 + int(2), flap: int(2) })),
+  }))
+  const plane = { x: r() * (W + 60), y: 22 + int(30) }
+  const [shopA, shopB] = [...konbini].sort((a, b) => a - b)
+
+  const drawVehicle = (c: Canvas, kind: string, body: string, dir: number, x: number, y: number) => {
+    const [w, h, draw] = VEHICLES[kind]
+    const shade = (col: RGB) => (dark ? mix(col, near, 0.25) : col)
+    const rect = (dx: number, dy: number, rw: number, rh: number, col: string) =>
+      c.rect(Math.round(dir > 0 ? x + dx : x + w - dx - rw), y - h + dy, rw, rh, col === lamp ? hex(col) : shade(hex(col)))
+    const lamp = dark ? '#fff4c2' : '#d8d2b8'
+    for (let i = 1; i < w - 1; i++) c.blend(Math.round(x) + i, y, BLACK, 0.35)
+    draw(rect, body, lamp)
+    if (!['scooter', 'delivery'].includes(kind)) {
+      rect(2, h - 1, 3, 1, '#14141c')
+      rect(w - 5, h - 1, 3, 1, '#14141c')
+      rect(0, h - 3, 1, 1, '#ff4040')
+    }
+    if (dark) for (let i = 0; i < 12; i++) for (const yy of [y - 3, y - 2]) {
+      const xx = Math.round(dir > 0 ? x + w + i : x - 1 - i)
+      c.set(xx, yy, screen(c.get(xx, yy), hex('#fff4c2'), 0.3 * (1 - i / 12)))
+    }
+  }
+  const drawWalker = (c: Canvas, crowd: (typeof crowds)[number], x: number, y: number, stride: number) => {
+    const shade = (col: RGB) => (dark ? mix(col, near, 0.35) : col)
+    const px = Math.round(x)
+    c.rect(px + 1, y - 7, 2, 2, shade(hex('#e9c9a8')))
+    c.rect(px, y - 5, 4, 3, shade(crowd.coat))
+    c.rect(px + (stride ? 0 : 1), y - 2, 1, 2, shade(hex('#1a1a20')))
+    c.rect(px + (stride ? 3 : 2), y - 2, 1, 2, shade(hex('#1a1a20')))
+    if (raining) {
+      c.rect(px - 1, y - 10, 6, 1, shade(crowd.umbrella))
+      c.rect(px - 2, y - 9, 8, 1, shade(crowd.umbrella))
+      c.rect(px + 2, y - 8, 1, 2, shade(hex('#2a2f3a')))
+    }
+  }
 
   // The train, drawn in its own coordinates from tail (0) to head (length), facing either way.
   const local = city.behavior !== 'shinkansen'
@@ -443,10 +609,39 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
     }
     const tip = front + Math.max(nose - 4, 0)
     rect(tip, 218, 3, 2, headlight)
-    for (let i = 3; i < 24; i++) for (let y = 216; y <= 221; y++) blend(tip + i, y, headlight, 0.35 * (1 - i / 24))
     rect(0, 218, 1, 2, hex('#ff4040'))
+    if (dark) {
+      // A tapered headlight cone fading ahead, a streak on the rail, and a soft red tail glow.
+      // Light keeps its own color (no far-track tint), and the far train's is dimmer.
+      const strength = reverse ? 0.55 : 1
+      const lite = (ox: number, y: number, col: RGB, a: number) => {
+        const X = at(ox)
+        c.set(X, y + dy, screen(c.get(X, y + dy), col, a * strength))
+      }
+      for (let i = 1; i < 60; i++) {
+        const half = 0.5 + i * 0.06
+        for (let y = Math.round(219 - half); y <= Math.round(219 + half * 0.5); y++) lite(tip + 2 + i, y, headlight, 0.45 * (1 - i / 60) ** 1.6)
+      }
+      for (let i = 0; i < 45; i++) lite(tip + 2 + i, RAIL, headlight, 0.5 * (1 - i / 45))
+      for (let ddy = -3; ddy <= 3; ddy++)
+        for (let ddx = -6; ddx <= 0; ddx++) {
+          const d = Math.hypot(ddx, ddy)
+          if (d <= 6) lite(ddx, 219 + ddy, hex('#ff4040'), 0.45 * (1 - d / 6))
+        }
+    }
   }
 
+  if (wet && look !== 'rain') {
+    const veil = hex('#1a2030')
+    for (let i = 0; i < base.buf.length; i += 4) {
+      const [r0, g0, b0] = mix([base.buf[i], base.buf[i + 1], base.buf[i + 2]], veil, 0.25)
+      base.buf[i] = r0
+      base.buf[i + 1] = g0
+      base.buf[i + 2] = b0
+    }
+  }
+
+  const rainColor = mix(mix(skyBottom, WHITE, 0.45), skyTop, 0.2)
   const frames: Uint8Array[] = []
   for (let f = 0; f < FRAMES; f++) {
     const t = f / FRAMES
@@ -475,6 +670,73 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
       for (const [dx, dy] of [[6, -1], [7, -2], [7 + swish, -3], [7 + swish * 2, -4]]) c.set(x + dx, y + dy, catInk)
     }
 
+    // Birds glide across by day; at night a plane blinks its way over.
+    if (!wet && !p.stars) {
+      for (const flock of flocks) {
+        const fx = ((flock.x + (W + 60) * t) % (W + 60)) - 30
+        for (const b of flock.birds) {
+          const up = (Math.floor(t * 48) + b.flap) % 2 === 0
+          const bx = Math.round(fx + b.dx)
+          const by = flock.y + b.dy
+          for (const [dx, lift] of [[-1, 1], [0, 0], [1, 1]]) c.set(bx + dx, by - (up ? lift : 0), mix(near, BLACK, 0.3))
+        }
+      }
+    } else if (!wet) {
+      const x = Math.round(((plane.x + (W + 60) * t) % (W + 60)) - 30)
+      c.rect(x, plane.y, 5, 1, mix(skyTop, WHITE, 0.35))
+      c.rect(x + 2, plane.y - 1, 1, 3, mix(skyTop, WHITE, 0.35))
+      if (Math.floor(t * 20) % 2) c.set(x + 4, plane.y, hex('#ff3b3b'))
+    }
+
+    // Street trees sway in gusts, the tops further than the bottoms.
+    for (const tree of trees) {
+      const gust = 0.9 + 0.6 * Math.sin(2 * Math.PI * (t * 2 + tree.phase)) + 0.3 * Math.sin(2 * Math.PI * (t * 5 + tree.phase * 2))
+      tree.crown.forEach((pixels, shade) => {
+        for (const [dx, dy] of pixels) {
+          const lean = Math.round(-gust * 3.5 * Math.max(0, (tree.size - dy) / (2 * tree.size)) ** 1.3)
+          c.set(tree.x + dx + lean, tree.y + dy, leaves[shade])
+        }
+      })
+    }
+
+    // Steam rising from the ramen stalls, thicker in winter.
+    for (const st of stalls)
+      for (let k = 0; k < 4; k++) {
+        const rise = ((t * 3 + k / 4) % 1) * 14
+        c.blend(st.x + Math.round(Math.sin(2 * Math.PI * (t * 2 + k / 4)) * 2), Math.round(st.y - rise), hex('#e8e8f0'), (season === 'winter' ? 0.6 : 0.35) * (1 - rise / 14))
+      }
+
+    // Puddles on a wet street, catching the sky by day and the lamps by night.
+    if (raining)
+      for (const pd of puddles) {
+        c.rect(pd.x, STREET + 6, pd.w, 1, mix(ground, dark ? glow : skyBottom, 0.3))
+        c.rect(pd.x + 2, STREET + 7, pd.w - 4, 1, mix(ground, dark ? glow : skyBottom, 0.3))
+        c.set(pd.x + Math.round(wave(t * 3 + pd.phase) * (pd.w - 2)), STREET + 6, mix(ground, WHITE, 0.45))
+      }
+
+    // People on the pavement, under umbrellas when it rains.
+    for (const crowd of crowds)
+      for (let i = 0; i < crowd.count; i++) {
+        const loop = crowd.count * crowd.gap
+        const x = ((((crowd.offset + i * crowd.gap + crowd.dir * crowd.gap * t) % loop) + loop) % loop) - 10
+        if (x < W + 10) drawWalker(c, crowd, x, STREET + 1, (Math.floor(t * 24) + crowd.step + i) % 2)
+      }
+
+    // Traffic in two lanes: oncoming further back, the near lane in front.
+    for (const v of traffic) {
+      const x = ((((v.x + v.dir * v.laps * span * t) % span) + span) % span) - 40
+      drawVehicle(c, v.kind, v.color, v.dir, x, v.dir > 0 ? STREET + 8 : STREET + 4)
+    }
+    // A delivery scooter rides in, stops at each konbini, and rides off within every loop.
+    if (shopA !== undefined) {
+      const stopsAt: [number, number][] = [[0, -30], [0.22, shopA], [0.38, shopA], [0.6, shopB ?? shopA], [0.76, shopB ?? shopA], [1, W + 30]]
+      const i = stopsAt.findIndex(([at], k) => k > 0 && t <= at)
+      const [t0, x0] = stopsAt[i - 1]
+      const [t1, x1] = stopsAt[i]
+      drawVehicle(c, 'delivery', '#e2231a', 1, x0 + (x1 - x0) * ((t - t0) / (t1 - t0)) - 5, STREET + 4)
+    }
+    for (const [x, y, w, h, col] of fronts) c.rect(x, y, w, h, col)
+
     drawTrain(c, t, true)
     drawTrain(c, t, false)
 
@@ -491,7 +753,7 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
     for (const q of particles) {
       const y = (q.y + t * H * (weather === 'rain' ? q.laps * 3 + 6 : q.laps * 2)) % H
       if (weather === 'rain') {
-        for (let k = 0; k < 8; k++) c.blend(q.x - k * 0.3, y - k, mix(skyBottom, WHITE, 0.5), 0.55)
+        for (let k = 0; k < 5; k++) c.set(q.x - k * 0.3, y - k, rainColor)
       } else if (weather === 'snow') {
         const x = q.x + Math.sin(2 * Math.PI * (2 * t + q.phase)) * 4
         if (q.laps > 1) c.rect(x, y, 2, 2, WHITE)
@@ -504,6 +766,14 @@ export function renderCity(city: City, time = 'night'): Uint8Array[] {
         const [a, b] = weather === 'leaves' ? [hex(LEAVES[q.laps]), hex(LEAVES[0])] : [hex('#ffb7c9'), hex('#ff9fb8')]
         c.rect(x, y, 3, 2, a)
         c.set(x + (q.laps > 1 ? 3 : -1), y + 1, b)
+      }
+    }
+    if (live === 'storm' && ((t >= 0.6 && t < 0.608) || (t >= 0.63 && t < 0.635))) {
+      for (let i = 0; i < c.buf.length; i += 4) {
+        const [r0, g0, b0] = mix([c.buf[i], c.buf[i + 1], c.buf[i + 2]], WHITE, 0.35)
+        c.buf[i] = r0
+        c.buf[i + 1] = g0
+        c.buf[i + 2] = b0
       }
     }
     frames.push(c.buf)

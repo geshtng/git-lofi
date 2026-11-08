@@ -61,3 +61,38 @@ test('the first frame shows the train, even on a snowed-in day', () => {
     assert.ok(pixels > 100, `train missing with ${quiet} quiet days`)
   }
 })
+
+test('weather codes fold into what the scene draws', async () => {
+  const { weatherFromCode } = await import('../src/weather.ts')
+  assert.deepEqual([0, 3, 45, 51, 63, 81, 71, 86, 95, 99].map(weatherFromCode), ['clear', 'clear', 'clear', 'rain', 'rain', 'rain', 'snow', 'snow', 'storm', 'storm'])
+})
+
+test('live weather and darkness change the scene', () => {
+  const city = deriveCity(snapshot(400, () => 3))
+  const brightness = (frame: Uint8Array) => frame.reduce((sum, v, i) => (i % 4 === 3 ? sum : sum + v), 0)
+  const storm = renderCity(city, 'night', { weather: 'storm', dark: true }).map(brightness)
+  assert.ok(Math.max(...storm) > storm[0] * 1.2, 'a storm flashes')
+  assert.ok(storm[0] === Math.min(storm[0], storm[1]) || Math.abs(storm[0] - storm[1]) < storm[0] * 0.05, 'the first frame is not a flash')
+  const lit = renderCity(city, 'day', { dark: true })[0]
+  const unlit = renderCity(city, 'day', { dark: false })[0]
+  assert.notDeepEqual(lit, unlit, 'street lights follow the dark')
+  assert.deepEqual(renderCity(city, 'day')[0], unlit, 'without a hint, day means lights off')
+})
+
+test('locations: coordinates, city qualifiers, and southern seasons', async () => {
+  const { parseCoordinates, pickPlace } = await import('../src/location.ts')
+  const { seasonOf } = await import('../src/render.ts')
+  assert.deepEqual(parseCoordinates('-6.21, 106.85'), { latitude: -6.21, longitude: 106.85, label: '-6.21,106.85' })
+  assert.equal(parseCoordinates('Jakarta'), undefined)
+  assert.throws(() => parseCoordinates('95,10'))
+  const results = [
+    { name: 'Bandung', latitude: 1, longitude: 1, country: 'Philippines', country_code: 'PH' },
+    { name: 'Bandung', latitude: -6.9, longitude: 107.6, country: 'Indonesia', country_code: 'ID', admin1: 'West Java' },
+  ]
+  assert.equal(pickPlace(results)?.country, 'Philippines')
+  assert.equal(pickPlace(results, 'indonesia')?.latitude, -6.9)
+  assert.equal(pickPlace(results, 'West Java')?.country_code, 'ID')
+  assert.equal(pickPlace(results, 'Japan'), undefined)
+  assert.deepEqual([1, 4, 7, 10].map((m) => seasonOf(m)), ['winter', 'spring', 'summer', 'autumn'])
+  assert.deepEqual([1, 4, 7, 10].map((m) => seasonOf(m, true)), ['summer', 'autumn', 'winter', 'spring'])
+})

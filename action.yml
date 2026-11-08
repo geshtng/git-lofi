@@ -13,9 +13,18 @@ inputs:
       auto follows the current hour in `timezone`; or one of day, night, dusk, dawn,
       rain, snow, or sakura.
     default: auto
+  location:
+    description:
+      Where you are, as a city (like Jakarta, or Bandung, Indonesia) or latitude,longitude. Sets
+      the live weather, the timezone, and the hemisphere for seasons.
+    default: ''
   timezone:
-    description: IANA timezone that auto uses, like Asia/Jakarta.
-    default: UTC
+    description: IANA timezone that auto uses, like Asia/Jakarta. Overrides the location's.
+    default: ''
+  weather:
+    description:
+      Live weather at latitude,longitude (like -6.21,106.85), or off. Overrides the location's.
+    default: ''
   output-dir:
     description: Folder, relative to the workspace, that receives lofi.gif.
     default: lofi
@@ -39,7 +48,12 @@ runs:
         LOFI_LOGIN: ${{ inputs.login }}
         LOFI_TIME: ${{ inputs.time }}
         LOFI_TZ: ${{ inputs.timezone }}
+        LOFI_WEATHER: ${{ inputs.weather }}
+        LOFI_LOCATION: ${{ inputs.location }}
         LOFI_OUT: ${{ inputs.output-dir }}
       run: |
-        "$GITHUB_ACTION_PATH/node_modules/.bin/tsx" "$GITHUB_ACTION_PATH/src/main.ts" \
-          "$LOFI_LOGIN" --time "$LOFI_TIME" --tz "$LOFI_TZ" --out "$LOFI_OUT"
+        args=("$LOFI_LOGIN" --time "$LOFI_TIME" --out "$LOFI_OUT")
+        if [ -n "$LOFI_LOCATION" ]; then args+=("--location=$LOFI_LOCATION"); fi
+        if [ -n "$LOFI_TZ" ]; then args+=("--tz=$LOFI_TZ"); fi
+        if [ -n "$LOFI_WEATHER" ]; then args+=("--weather=$LOFI_WEATHER"); fi
+        "$GITHUB_ACTION_PATH/node_modules/.bin/tsx" "$GITHUB_ACTION_PATH/src/main.ts" "${args[@]}"
