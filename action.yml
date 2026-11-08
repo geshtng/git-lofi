@@ -1,0 +1,45 @@
+name: git-lofi
+description: Draw a GitHub account's lofi Japanese city from its public activity as a looping GIF.
+branding:
+  icon: moon
+  color: purple
+
+inputs:
+  login:
+    description: Account whose city to draw.
+    default: ${{ github.repository_owner }}
+  time:
+    description:
+      auto follows the current hour in `timezone`; or one of day, night, dusk, dawn,
+      rain, snow, or sakura.
+    default: auto
+  timezone:
+    description: IANA timezone that auto uses, like Asia/Jakarta.
+    default: UTC
+  output-dir:
+    description: Folder, relative to the workspace, that receives lofi.gif.
+    default: lofi
+  token:
+    description: Token for reading the account's public data; the built-in token is enough.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+    - name: Install git-lofi
+      shell: bash
+      run: npm ci --omit=dev --prefix "$GITHUB_ACTION_PATH"
+    - name: Draw the city
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        LOFI_LOGIN: ${{ inputs.login }}
+        LOFI_TIME: ${{ inputs.time }}
+        LOFI_TZ: ${{ inputs.timezone }}
+        LOFI_OUT: ${{ inputs.output-dir }}
+      run: |
+        "$GITHUB_ACTION_PATH/node_modules/.bin/tsx" "$GITHUB_ACTION_PATH/src/main.ts" \
+          "$LOFI_LOGIN" --time "$LOFI_TIME" --tz "$LOFI_TZ" --out "$LOFI_OUT"

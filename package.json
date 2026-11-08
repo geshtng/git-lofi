@@ -1,0 +1,24 @@
+{
+  "name": "git-lofi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Draw a lofi Japanese city from a GitHub account's public activity, as a looping GIF for a profile README.",
+  "type": "module",
+  "bin": {
+    "git-lofi": "src/main.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc",
+    "samples": "tsx scripts/samples.ts"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5"
+  }
+}
